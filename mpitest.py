@@ -15,28 +15,45 @@ comm = MPI.COMM_WORLD
 
 import sys, os
 import multiprocessing
-import json
 
 def blat(i, j):
     print('blat({}, {})'.format(i, j))    
 
 #-------------------------------------------------------------------------
+
 print('Rank {} is alive'.format(comm.rank))
 sys.stdout.flush()
+
+#- Importing socket, optparse, or argparse makes the problem go away
+if '--socket' in sys.argv:
+    import socket
+
+if '--optparse' in sys.argv:
+    import optparse
+
+if '--argparse' in sys.argv:
+    import argparse
+    
+#- Parse other arguments by hand; can't use optparse or argparse since those
+#- bizarrely make the problem go away
+
+#- bcast list size; 100k works, 200k doesn't
+if '--bcast-size' in sys.argv:
+    i = sys.argv.index('--bcast-size')
+    bcast_size = int(sys.argv[i+1])
+else:
+    bcast_size = 200000
 
 data = None
 master = 0
 if comm.rank == master:
     print('Master rank is {}'.format(master))
-    #- Odd: if both of these are uncommented, it will hang
-    data = list(range(200000))  #- later hangs if this is bcast
-    # data = list(range(100000))  #- ok to bcast
+    data = list(range(bcast_size))
+    print(data.__sizeof__())
 
-if len(sys.argv) > 1 and sys.argv[1] == '--hang':
-    #- This command doesn't hang, but it causes later commands to hang
-    #- Note that data isn't used at all in subsequent code
-    data = comm.bcast(data, root=master)
+data = comm.bcast(data, root=master)
 
+#- Start 4 processes per MPI rank
 nproc = 4
 proclist = list()
 for j in range(nproc):
@@ -47,7 +64,7 @@ for j in range(nproc):
 sys.stdout.flush()
 comm.barrier()
 
-#- Check return codes
+#- Check return codes; do in order of MPI rank
 for i in range(comm.size):
     if i == comm.rank:
         for j in range(nproc):
