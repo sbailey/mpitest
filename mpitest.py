@@ -16,51 +16,58 @@ comm = MPI.COMM_WORLD
 import sys, os
 import multiprocessing
 import json
-import numpy as np
-
-data = None
-if comm.rank == 0:
-    data = list(range(800000))
-
-if len(sys.argv) > 1 and sys.argv[1] == '--hang':
-    #- This command doesn't hang, but it causes later commands to hang
-    #- Note that data isn't used at all in subsequent code
-    data = comm.bcast(data, root=0)
 
 def blat(i, j, qin, qout):
-    print('Hello from {}-{}'.format(i, j))
-    ix, jx, zz = qin.get()
-    qout.put([ix, jx, np.sum(zz)])
+    print('blat({}, {}, qin, qout)'.format(i, j))
+    ix, jx = qin.get()
+    qout.put([ix, jx])
+    
+    filename = 'blat-{}-{}.txt'.format(i, j)
+    if os.path.exists(filename):
+        os.remove(filename)
+    fx = open(filename, 'w')
+    fx.write('hello')
+    fx.close()
 
 #-------------------------------------------------------------------------
 print('Rank {} is alive'.format(comm.rank))
 sys.stdout.flush()
 
+data = None
+master = 1
+if comm.rank == master:
+    print('Master rank is {}'.format(master))
+    #- Odd: if both of these are uncommented, it will hang
+    data = list(range(200000))  #- later hangs if this is bcast
+    # data = list(range(100000))  #- ok to bcast
+
+if len(sys.argv) > 1 and sys.argv[1] == '--hang':
+    #- This command doesn't hang, but it causes later commands to hang
+    #- Note that data isn't used at all in subsequent code
+    data = comm.bcast(data, root=master)
+
 qin = multiprocessing.Queue()
 qout = multiprocessing.Queue()
 nproc = 4
+proclist = list()
 for j in range(nproc):
-    zz = np.random.uniform(0,1, size=10)
-    zz = list(zz)
-    qin.put( [comm.rank, j, zz] )
+    qin.put( [comm.rank, j] )
 
     #- Works to call blat directly, but not within a spawned process
     # blat(comm.rank, j, qin, qout)
+    print('Rank {} starting process {}'.format(comm.rank, j))
     p = multiprocessing.Process(target=blat, args=[comm.rank, j, qin, qout])
     p.start()
+    proclist.append(p)
 
+#- Doesn't help
 for j in range(nproc):
-    print('Getting result {}-{}'.format(comm.rank, j))
-    ix, jx, sumzz = qout.get()
-    print('  -->', ix, jx, sumzz)
-    
+    proclist[j].join()
+    print('Rank {} finished process {}'.format(comm.rank, j))
 
-#- The original redrock code that was hanging inside redrock
-# cmd1 = "rrdesi --zbest /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/0001m067/zbest-0001m067.fits --output /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/0001m067/rr-0001m067.h5 /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/0001m067/brick-b-0001m067.fits /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/0001m067/brick-r-0001m067.fits /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/0001m067/brick-z-0001m067.fits --ncpu 12 --ntargets 4"
-# cmd2 = "rrdesi --output /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/2766p445/rr-2766p445.h5 --zbest /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/2766p445/zbest-2766p445.fits /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/2766p445/brick-b-2766p445.fits /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/2766p445/brick-r-2766p445.fits /scratch2/scratchdirs/sjbailey/desi/dc17a/spectro/redux/dc17a-test/bricks/2766p445/brick-z-2766p445.fits --ncpu 12 --ntargets 4"
-# cmds = [cmd1, cmd2]
-# from redrock.external.desi import rrdesi
-# rrdesi(cmds[comm.rank].split()[1:])
-# print('Rank {} done'.format(comm.rank))
-# sys.stdout.flush()
-# comm.barrier()
+comm.barrier()
+
+#- Seems to hang in here, fetching from the queue
+for j in range(nproc):
+    ix, jx = qout.get()
+    print('{} {} --> {} {}'.format(comm.rank, j, ix, jx))
