@@ -18,56 +18,41 @@ import multiprocessing
 import json
 import numpy as np
 
-#- data.json was created with dc17a-test data
-# import json
-# from desispec.pipeline import load_prod
-# grph = load_prod(nightstr='20190829', spectrographs=None)
-# fx = open('data.json', 'w')
-# fx.write(json.dumps(grph))
-# fx.close()
-
-grph = None
+data = None
 if comm.rank == 0:
-    #- load data.json is in same directory as this code script
-    datafile = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data.json')
-    grph = json.load(open(datafile))
-    
-    #- Try trimming: works
-    # key = list(grph.keys())[0]
-    # grph = grph[key]
+    data = list(range(800000))
 
 if len(sys.argv) > 1 and sys.argv[1] == '--hang':
     #- This command doesn't hang, but it causes later commands to hang
-    grph = comm.bcast(grph, root=0)
+    #- Note that data isn't used at all in subsequent code
+    data = comm.bcast(data, root=0)
 
 def blat(i, j, qin, qout):
     print('Hello from {}-{}'.format(i, j))
     ix, jx, zz = qin.get()
     qout.put([ix, jx, np.sum(zz)])
 
-def foo(i):
-    qin = multiprocessing.Queue()
-    qout = multiprocessing.Queue()
-    nproc = 4
-    for j in range(nproc):
-        zz = np.random.uniform(0,1, size=10)
-        zz = list(zz)
-        qin.put( [i, j, zz] )
-        p = multiprocessing.Process(target=blat, args=[i, j, qin, qout])
-        p.start()
-
-    for j in range(nproc):
-        print('Getting result {}-{}'.format(i, j))
-        ix, jx, sumzz = qout.get()
-        print('  -->', ix, jx, sumzz)
-
+#-------------------------------------------------------------------------
 print('Rank {} is alive'.format(comm.rank))
 sys.stdout.flush()
-for i in range(comm.size):
-    if i == comm.rank:
-        foo(comm.rank)
-        sys.stdout.flush()
-    comm.barrier()
+
+qin = multiprocessing.Queue()
+qout = multiprocessing.Queue()
+nproc = 4
+for j in range(nproc):
+    zz = np.random.uniform(0,1, size=10)
+    zz = list(zz)
+    qin.put( [comm.rank, j, zz] )
+
+    #- Works to call blat directly, but not within a spawned process
+    # blat(comm.rank, j, qin, qout)
+    p = multiprocessing.Process(target=blat, args=[comm.rank, j, qin, qout])
+    p.start()
+
+for j in range(nproc):
+    print('Getting result {}-{}'.format(comm.rank, j))
+    ix, jx, sumzz = qout.get()
+    print('  -->', ix, jx, sumzz)
     
 
 #- The original redrock code that was hanging inside redrock
