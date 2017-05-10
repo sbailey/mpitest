@@ -17,24 +17,21 @@ import sys, os
 import multiprocessing
 import json
 
-def blat(i, j, qin, qout):
-    print('blat({}, {}, qin, qout)'.format(i, j))
-    ix, jx = qin.get()
-    qout.put([ix, jx])
-    
-    filename = 'blat-{}-{}.txt'.format(i, j)
-    if os.path.exists(filename):
-        os.remove(filename)
+def blat(i, j):
+    print('blat({}, {})'.format(i, j))    
+    filename = 'mpitest-{}-{}.txt'.format(i, j)
+    assert not os.path.exists(filename)
     fx = open(filename, 'w')
-    fx.write('hello')
+    fx.write('hello {} {}'.format(i, j))
     fx.close()
+    assert os.path.exists(filename)
 
 #-------------------------------------------------------------------------
 print('Rank {} is alive'.format(comm.rank))
 sys.stdout.flush()
 
 data = None
-master = 1
+master = 0
 if comm.rank == master:
     print('Master rank is {}'.format(master))
     #- Odd: if both of these are uncommented, it will hang
@@ -46,28 +43,39 @@ if len(sys.argv) > 1 and sys.argv[1] == '--hang':
     #- Note that data isn't used at all in subsequent code
     data = comm.bcast(data, root=master)
 
-qin = multiprocessing.Queue()
-qout = multiprocessing.Queue()
 nproc = 4
 proclist = list()
 for j in range(nproc):
-    qin.put( [comm.rank, j] )
+    filename = 'mpitest-{}-{}.txt'.format(comm.rank, j)
+    if os.path.exists(filename):
+        os.remove(filename)
 
     #- Works to call blat directly, but not within a spawned process
     # blat(comm.rank, j, qin, qout)
     print('Rank {} starting process {}'.format(comm.rank, j))
-    p = multiprocessing.Process(target=blat, args=[comm.rank, j, qin, qout])
+    p = multiprocessing.Process(target=blat, args=[comm.rank, j])
     p.start()
     proclist.append(p)
 
+comm.barrier()
+
 #- Doesn't help
 for j in range(nproc):
-    proclist[j].join()
+    p = proclist[j]
+    p.join()
+    print('Rank {} proc {} pid {} exit {}'.format(comm.rank, j, p.pid, p.exitcode))
     print('Rank {} finished process {}'.format(comm.rank, j))
 
 comm.barrier()
+sys.stdout.flush()
+comm.barrier()
 
-#- Seems to hang in here, fetching from the queue
-for j in range(nproc):
-    ix, jx = qout.get()
-    print('{} {} --> {} {}'.format(comm.rank, j, ix, jx))
+if comm.rank == 0:
+    for i in range(comm.size):
+        for j in range(nproc):
+            filename = 'mpitest-{}-{}.txt'.format(i, j)
+            if os.path.exists(filename):
+                print('OK   {} {}'.format(i, j))
+                os.remove(filename)
+            else:
+                print('FAIL {} {}'.format(i, j))
