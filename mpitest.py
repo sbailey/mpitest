@@ -15,6 +15,9 @@ srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 200000 --argparse
 
 #- Fails
 srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 500000 --argparse
+
+#- Succeeds
+srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 500000
 """
 
 from __future__ import absolute_import, division, print_function
@@ -93,7 +96,7 @@ for j in range(nproc):
 sys.stdout.flush()
 comm.barrier()
 
-#- Check return codes; do in order of MPI rank
+#- Check return codes; print results in order of MPI rank
 for i in range(comm.size):
     if i == comm.rank:
         for j in range(nproc):
