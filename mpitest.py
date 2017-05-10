@@ -5,7 +5,16 @@ Testing MPI + redrock
 
 module load python/3.5-anaconda
 salloc -N 2 -p debug
-srun -N 2 -n 2 -c 24 $SCRATCH/mpitest/mpitest.py --hang
+
+#- Fails
+srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 200000
+
+#- Succeeds
+srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 100000
+srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 200000 --argparse
+
+#- Fails
+srun -N 2 -n 2 -c 12 $SCRATCH/mpitest/mpitest.py --bcast-size 500000 --argparse
 """
 
 from __future__ import absolute_import, division, print_function
@@ -15,6 +24,7 @@ comm = MPI.COMM_WORLD
 
 import sys, os
 import multiprocessing
+import optparse
 
 def blat(i, j):
     print('blat({}, {})'.format(i, j))    
@@ -24,18 +34,31 @@ def blat(i, j):
 print('Rank {} is alive'.format(comm.rank))
 sys.stdout.flush()
 
+# parser = optparse.OptionParser(usage = "%prog [options]")
+# parser.add_option("--bcast-size", type=int, default=200000, help="bcast array size [%default]")
+# # parser.add_option("-o", "--output", type=str,  help="input data")
+# parser.add_option("--socket", action="store_true", help="import socket module")
+# opts, args = parser.parse_args()
+#
+# bcast_size = opts.bcast_size
+#
+# if opts.socket:
+#     import socket
+
 #- Importing socket, optparse, or argparse makes the problem go away
 if '--socket' in sys.argv:
     import socket
 
-if '--optparse' in sys.argv:
-    import optparse
-
 if '--argparse' in sys.argv:
+    print('importing argparse')
     import argparse
-    
+
+# if '--optparse' in sys.argv:
+#     import optparse
+
 #- Parse other arguments by hand; can't use optparse or argparse since those
-#- bizarrely make the problem go away
+#- bizarrely make the problem go away, but only for some permutations of the
+#- code
 
 #- bcast list size; 100k works, 200k doesn't
 if '--bcast-size' in sys.argv:
@@ -44,17 +67,23 @@ if '--bcast-size' in sys.argv:
 else:
     bcast_size = 200000
 
+if '--root' in sys.argv:
+    i = sys.argv.index('--root')
+    root = int(sys.argv[i+1])
+else:
+    root = 0
+
 data = None
-master = 0
-if comm.rank == master:
-    print('Master rank is {}'.format(master))
+if comm.rank == root:
+    print('Root MPI rank is {}'.format(root))
+    print('bcast array size is {}'.format(bcast_size))
     data = list(range(bcast_size))
-    print(data.__sizeof__())
+    # print(data.__sizeof__())
 
-data = comm.bcast(data, root=master)
+data = comm.bcast(data, root=root)
 
-#- Start 4 processes per MPI rank
-nproc = 4
+#- Start 2 processes per MPI rank
+nproc = 2
 proclist = list()
 for j in range(nproc):
     p = multiprocessing.Process(target=blat, args=[comm.rank, j])
