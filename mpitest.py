@@ -34,7 +34,7 @@ def blat(i, j):
 
 #-------------------------------------------------------------------------
 
-print('Rank {} is alive'.format(comm.rank))
+print('Rank {} size {} is alive'.format(comm.rank, comm.size))
 sys.stdout.flush()
 
 # parser = optparse.OptionParser(usage = "%prog [options]")
@@ -81,9 +81,22 @@ if comm.rank == root:
     print('Root MPI rank is {}'.format(root))
     print('bcast array size is {}'.format(bcast_size))
     data = list(range(bcast_size))
+    # data = [float(x) for x in data]
+    # import numpy as np
+    # data = np.arange(bcast_size)
     # print(data.__sizeof__())
 
+if data is None:
+    print('Rank {} pre-bcast data is None'.format(comm.rank))
+else:
+    print('Rank {} pre-bcast data size = {}'.format(comm.rank, data.__sizeof__()))
+
 data = comm.bcast(data, root=root)
+print('Rank {} post-bcast data size = {}'.format(comm.rank, data.__sizeof__()))
+
+
+for i in range(bcast_size):
+    assert data[i] == i
 
 #- Start 2 processes per MPI rank
 nproc = 2
@@ -97,6 +110,7 @@ sys.stdout.flush()
 comm.barrier()
 
 #- Check return codes; print results in order of MPI rank
+os.system('hostname')   
 for i in range(comm.size):
     if i == comm.rank:
         for j in range(nproc):
